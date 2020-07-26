@@ -33,11 +33,13 @@ class App extends React.Component {
             myProfile: {},
             isAppReady: false,
             topicList: ['topic1', 'topic2'],
-            disableLogin: false
+            disableLogin: false,
+            currentThread: ''
         }
         this.sendMessage = this.sendMessage.bind(this);
         this.handleLogin = this.handleLogin.bind(this);
-
+        this.setupThread = this.setupThread.bind(this);
+        this.updateThreadPosts = this.updateThreadPosts.bind(this);
     }
 
     componentDidMount() {
@@ -50,6 +52,7 @@ class App extends React.Component {
     }
 
     handleLogin = async () => {
+        console.log('goes into handleLogin function')
         const { history } = this.props;
         const addresses = await window.ethereum.enable();
         const myAddress = addresses[0];
@@ -58,20 +61,59 @@ class App extends React.Component {
         const myProfile = await Box.getProfile(myAddress);
 
         const box = await Box.openBox(myAddress, window.ethereum, { ghostPinbot: "/dns4/defi-chat-peer.herokuapp.com/wss//ip4/127.0.0.1/tcp/31314/ws" })
+        console.log('box is: ', box);
         await box.syncDone
 
         const chatSpace = await box.openSpace('ghostchat')
         const myDid = chatSpace.DID;
 
-        this.setState({ box, chatSpace, myDid, myProfile, myAddress });
+        this.setState({ box, myDid, myProfile, myAddress });
+        this.setState({ chatSpace: chatSpace })
+
+        console.log('setup thread1')
+        this.setupThread();
+        console.log('setup thread2')
+
         history.push('/chat');
     }
 
-    sendMessage(text) {
-        DUMMY_DATA.push({ senderId: "newMessage", text: text });
-        this.setState({ messages: DUMMY_DATA })
+    sendMessage = async (text) => {
+        // DUMMY_DATA.push({ senderId: "newMessage", text: text });
+        // this.setState({ messages: DUMMY_DATA })
+        await this.state.currentThread.post(text);
     }
 
+    setupThread = async () => {
+        console.log('chatspace is: ', this.state.chatSpace);
+        let space = this.state.chatSpace;
+        const thread = await space.joinThread('topic1', {
+            ghost: true,
+            ghostBacklogLimit: 20 // optional and defaults to 50
+        })
+        console.log('thread is:', thread);
+        this.setState({ currentThread: thread });
+        thread.onUpdate(() => this.updateThreadPosts());
+
+        // now get all current posts
+        this.updateThreadPosts();
+        // thread.onNewCapabilities(() => this.updateThreadCapabilities());
+
+        // console.log('tony1');
+        // await this.state.currentThread.post('Hello');
+        // console.log('tony2');
+    }
+    updateThreadPosts = async () => {
+        // const { activeTopic  = this.state;
+        // this.updateThreadError();
+        console.log('entered updateThreadPosts function')
+        let threadData = []
+        // Step 3 - get posts in thread
+        const posts = await this.state.currentThread.getPosts();
+        console.log('posts in current topic: ', posts)
+        threadData.push(...posts)
+        console.log('threadData is: ', threadData);
+        this.setState({ messages: threadData });
+    }
     render() {
         const {
             isAppReady,
@@ -90,7 +132,8 @@ class App extends React.Component {
                         <Route
                             exact
                             path='/'
-                            render={() => <LoginComponent />}
+                            render={() => <LoginComponent
+                                handleLogin={this.handleLogin} />}
                         />
 
                         <Route
@@ -99,7 +142,7 @@ class App extends React.Component {
                             render={() => (
                                 <div>
                                     <Title />
-                                    <MessageList messages={this.state.messages} />
+                                    <MessageList messages={this.state.messages} chatSpace={this.state.chatSpace} />
                                     <SendMessageForm
                                         sendMessage={this.sendMessage} />
                                 </div>
@@ -114,17 +157,30 @@ class App extends React.Component {
 }
 
 class MessageList extends React.Component {
+    // constructor() {
+    //     super()
+    //     this.state = {
+    //         currentThread: '',
+    //         posts: ''
+    //     }
+    // }
+    // componentDidMount() {
+
+    //     console.log('component mounted');
+    //     this.getMessages();
+    // }
+
     render() {
         return (
             <ul className="message-list">
                 {this.props.messages.map((message, index) => {
                     return (
-                        <li key={message.id} className="message">
+                        <li key={message.postId} className="message">
                             <div>
-                                {message.senderId}
+                                {message.author}
                             </div>
                             <div>
-                                {message.text}
+                                {message.message}
                             </div>
                         </li>
                     )
@@ -182,7 +238,7 @@ class LoginComponent extends React.Component {
         return (
             <div>
                 <h1>Ghost Chat App</h1>
-                <button onClick={this.props.handleLogin} disableLogin={disableLogin}>
+                <button onClick={this.props.handleLogin}>
                     Get Started
                 </button>
             </div>
